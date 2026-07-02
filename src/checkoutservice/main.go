@@ -259,8 +259,13 @@ func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderReq
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "shipping error: %+v", err)
 	}
+	log.Infof("order shipped (tracking_id: %s)", shippingTrackingID)
 
-	_ = cs.emptyUserCart(ctx, req.UserId)
+	if err := cs.emptyUserCart(ctx, req.UserId); err != nil {
+		log.Warnf("failed to empty cart for user %q after order: %+v", req.UserId, err)
+	} else {
+		log.Infof("cart emptied for user %q", req.UserId)
+	}
 
 	orderResult := &pb.OrderResult{
 		OrderId:            orderID.String(),
@@ -326,6 +331,7 @@ func (cs *checkoutService) getUserCart(ctx context.Context, userID string) ([]*p
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user cart during checkout: %+v", err)
 	}
+	log.Infof("[checkout] retrieved cart for user %q (%d items)", userID, len(cart.GetItems()))
 	return cart.GetItems(), nil
 }
 

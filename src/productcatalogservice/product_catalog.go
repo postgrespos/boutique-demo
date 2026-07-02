@@ -41,7 +41,9 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
 	time.Sleep(extraLatency)
 
-	return &pb.ListProductsResponse{Products: p.parseCatalog()}, nil
+	products := p.parseCatalog()
+	log.Infof("[ListProducts] returning %d products", len(products))
+	return &pb.ListProductsResponse{Products: products}, nil
 }
 
 func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
@@ -50,10 +52,12 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 	catalog := p.parseCatalog()
 	for _, product := range catalog {
 		if req.Id == product.Id {
+			log.Infof("[GetProduct] id=%q found", req.Id)
 			return product, nil
 		}
 	}
 
+	log.Warnf("[GetProduct] id=%q not found", req.Id)
 	return nil, status.Errorf(codes.NotFound, "no product with ID %s", req.Id)
 }
 
@@ -68,6 +72,7 @@ func (p *productCatalog) SearchProducts(ctx context.Context, req *pb.SearchProdu
 		}
 	}
 
+	log.Infof("[SearchProducts] query=%q matched=%d", req.Query, len(ps))
 	return &pb.SearchProductsResponse{Results: ps}, nil
 }
 

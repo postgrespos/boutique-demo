@@ -108,6 +108,7 @@ public final class AdService {
           // Serve random ads.
           allAds = service.getRandomAds();
         }
+        logger.info("serving " + allAds.size() + " ad(s)");
         AdResponse reply = AdResponse.newBuilder().addAllAds(allAds).build();
         responseObserver.onNext(reply);
         responseObserver.onCompleted();

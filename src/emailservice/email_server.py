@@ -108,6 +108,8 @@ class EmailService(BaseEmailService):
 class DummyEmailService(BaseEmailService):
   def SendOrderConfirmation(self, request, context):
     logger.info('A request to send order confirmation email to {} has been received.'.format(request.email))
+    logger.info('order confirmation email sent to {} for order_id={} (dummy mode, not actually sent)'.format(
+      request.email, request.order.order_id))
     return demo_pb2.Empty()
 
 class HealthCheck():

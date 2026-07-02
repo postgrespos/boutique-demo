@@ -159,7 +159,7 @@ function convert (call, callback) {
       result.nanos = Math.floor(result.nanos);
       result.currency_code = request.to_code;
 
-      logger.info(`conversion request successful`);
+      logger.info(`converted ${from.units}.${from.nanos} ${from.currency_code} -> ${result.units}.${result.nanos} ${result.currency_code}`);
       callback(null, result);
     });
   } catch (err) {

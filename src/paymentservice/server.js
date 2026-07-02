@@ -39,12 +39,14 @@ class HipsterShopServer {
    * @param {*} callback  fn(err, ChargeResponse)
    */
   static ChargeServiceHandler(call, callback) {
+    const amount = call.request.amount;
     try {
-      logger.info(`PaymentService#Charge invoked with request ${JSON.stringify(call.request)}`);
+      logger.info(`PaymentService#Charge invoked for amount ${amount.currency_code}${amount.units}.${amount.nanos}`);
       const response = charge(call.request);
+      logger.info(`PaymentService#Charge succeeded (transaction_id: ${response.transaction_id})`);
       callback(null, response);
     } catch (err) {
-      console.warn(err);
+      logger.warn(`PaymentService#Charge failed: ${err.message}`);
       callback(err);
     }
   }

@@ -14,11 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import random
 from locust import FastHttpUser, TaskSet, between
 from faker import Faker
 import datetime
 fake = Faker()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("loadgenerator")
 
 products = [
     '0PUK6V6EV0',
@@ -47,13 +51,16 @@ def viewCart(l):
 
 def addToCart(l):
     product = random.choice(products)
+    quantity = random.randint(1,10)
     l.client.get("/product/" + product)
     l.client.post("/cart", {
         'product_id': product,
-        'quantity': random.randint(1,10)})
-    
+        'quantity': quantity})
+    logger.info("simulated user added product=%s quantity=%d to cart", product, quantity)
+
 def empty_cart(l):
     l.client.post('/cart/empty')
+    logger.info("simulated user emptied cart")
 
 def checkout(l):
     addToCart(l)
@@ -70,6 +77,7 @@ def checkout(l):
         'credit_card_expiration_year': random.randint(current_year, current_year + 70),
         'credit_card_cvv': f"{random.randint(100, 999)}",
     })
+    logger.info("simulated user completed checkout")
     
 def logout(l):
     l.client.get('/logout')  

@@ -232,6 +232,7 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
+	log.WithField("product", payload.ProductID).WithField("quantity", payload.Quantity).Info("added to cart")
 	w.Header().Set("location", baseUrl + "/cart")
 	w.WriteHeader(http.StatusFound)
 }
@@ -244,6 +245,7 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to empty cart"), http.StatusInternalServerError)
 		return
 	}
+	log.Info("cart emptied")
 	w.Header().Set("location", baseUrl + "/")
 	w.WriteHeader(http.StatusFound)
 }
@@ -372,8 +374,6 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to complete the order"), http.StatusInternalServerError)
 		return
 	}
-	log.WithField("order", order.GetOrder().GetOrderId()).Info("order placed")
-
 	order.GetOrder().GetItems()
 	recommendations, _ := fe.getRecommendations(r.Context(), sessionID(r), nil)
 
@@ -382,6 +382,10 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		multPrice := money.MultiplySlow(*v.GetCost(), uint32(v.GetItem().GetQuantity()))
 		totalPaid = money.Must(money.Sum(totalPaid, multPrice))
 	}
+	log.WithField("order", order.GetOrder().GetOrderId()).
+		WithField("items", len(order.GetOrder().GetItems())).
+		WithField("total_paid", fmt.Sprintf("%s%d.%02d", totalPaid.GetCurrencyCode(), totalPaid.GetUnits(), totalPaid.GetNanos()/10000000)).
+		Info("order placed")
 
 	currencies, err := fe.getCurrencies(r.Context())
 	if err != nil {
@@ -435,12 +439,13 @@ func (fe *frontendServer) getProductByID(w http.ResponseWriter, r *http.Request)
 
 	p, err := fe.getProduct(r.Context(), id)
 	if err != nil {
+		log.WithField("id", id).WithField("error", err).Warn("failed to retrieve product")
 		return
 	}
 
 	jsonData, err := json.Marshal(p)
 	if err != nil {
-		fmt.Println(err)
+		log.WithField("error", err).Error("failed to marshal product")
 		return
 	}
 
@@ -481,14 +486,12 @@ func (fe *frontendServer) chatBotHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fmt.Printf("%+v\n", body)
-	fmt.Printf("%+v\n", res)
-
 	err = json.Unmarshal(body, &response)
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to unmarshal body"), http.StatusInternalServerError)
 		return
 	}
+	log.WithField("session", sessionID(r)).Info("shopping assistant responded")
 
 	// respond with the same message
 	json.NewEncoder(w).Encode(Response{Message: response.Content})
