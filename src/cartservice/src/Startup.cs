@@ -10,6 +10,8 @@ using Microsoft.Extensions.Hosting;
 using cartservice.cartstore;
 using cartservice.services;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace cartservice
 {
@@ -57,6 +59,20 @@ namespace cartservice
 
 
             services.AddGrpc();
+
+            string collectorAddr = Configuration["COLLECTOR_SERVICE_ADDR"];
+            if (!string.IsNullOrEmpty(collectorAddr) && Configuration["ENABLE_TRACING"] == "1")
+            {
+                string serviceName = Configuration["OTEL_SERVICE_NAME"] ?? "cartservice";
+                services.AddOpenTelemetry()
+                    .ConfigureResource(resource => resource.AddService(serviceName))
+                    .WithTracing(tracing => tracing
+                        .AddAspNetCoreInstrumentation()
+                        .AddOtlpExporter(options =>
+                        {
+                            options.Endpoint = new Uri($"http://{collectorAddr}");
+                        }));
+            }
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

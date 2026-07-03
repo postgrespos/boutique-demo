@@ -24,10 +24,20 @@ import hipstershop.Demo.AdRequest;
 import hipstershop.Demo.AdResponse;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import io.grpc.ServerInterceptor;
 import io.grpc.StatusRuntimeException;
 import io.grpc.health.v1.HealthCheckResponse.ServingStatus;
 import io.grpc.services.*;
 import io.grpc.stub.StreamObserver;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
+import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.resources.Resource;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -47,6 +57,7 @@ public final class AdService {
 
   private Server server;
   private HealthStatusManager healthMgr;
+  private static ServerInterceptor tracingInterceptor;
 
   private static final AdService service = new AdService();
 
@@ -54,12 +65,14 @@ public final class AdService {
     int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "9555"));
     healthMgr = new HealthStatusManager();
 
-    server =
+    ServerBuilder<?> serverBuilder =
         ServerBuilder.forPort(port)
             .addService(new AdServiceImpl())
-            .addService(healthMgr.getHealthService())
-            .build()
-            .start();
+            .addService(healthMgr.getHealthService());
+    if (tracingInterceptor != null) {
+      serverBuilder.intercept(tracingInterceptor);
+    }
+    server = serverBuilder.build().start();
     logger.info("Ad Service started, listening on " + port);
     Runtime.getRuntime()
         .addShutdownHook(
@@ -208,27 +221,46 @@ public final class AdService {
   }
 
   private static void initTracing() {
-    if (System.getenv("DISABLE_TRACING") != null) {
+    if (!"1".equals(System.getenv("ENABLE_TRACING"))) {
       logger.info("Tracing disabled.");
       return;
     }
-    logger.info("Tracing enabled but temporarily unavailable");
-    logger.info("See https://github.com/GoogleCloudPlatform/microservices-demo/issues/422 for more info.");
+    String collectorAddr = System.getenv("COLLECTOR_SERVICE_ADDR");
+    if (collectorAddr == null || collectorAddr.isEmpty()) {
+      logger.warn("COLLECTOR_SERVICE_ADDR not set, tracing disabled.");
+      return;
+    }
+    String serviceName = System.getenv().getOrDefault("OTEL_SERVICE_NAME", "adservice");
 
-    // TODO(arbrown) Implement OpenTelemetry tracing
-    
-    logger.info("Tracing enabled - Stackdriver exporter initialized.");
+    OtlpGrpcSpanExporter exporter =
+        OtlpGrpcSpanExporter.builder().setEndpoint("http://" + collectorAddr).build();
+
+    Resource resource =
+        Resource.getDefault()
+            .merge(
+                Resource.create(
+                    Attributes.of(AttributeKey.stringKey("service.name"), serviceName)));
+
+    SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+            .addSpanProcessor(BatchSpanProcessor.builder(exporter).build())
+            .setResource(resource)
+            .build();
+
+    OpenTelemetry openTelemetry =
+        OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).buildAndRegisterGlobal();
+
+    tracingInterceptor = GrpcTelemetry.create(openTelemetry).newServerInterceptor();
+    logger.info("Tracing enabled - OTLP exporter initialized, sending to " + collectorAddr);
   }
 
   /** Main launches the server from the command line. */
   public static void main(String[] args) throws IOException, InterruptedException {
+    // Tracing must be initialized before the server is built, since the tracing
+    // interceptor (if any) needs to be attached at build time.
+    initTracing();
 
-    new Thread(
-            () -> {
-              initStats();
-              initTracing();
-            })
-        .start();
+    new Thread(() -> initStats()).start();
 
     // Start the RPC server. You shouldn't see any output from gRPC before this.
     logger.info("AdService starting.");

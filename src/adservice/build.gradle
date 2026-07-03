@@ -18,6 +18,8 @@ def grpcVersion = "1.80.0"
 def jacksonCoreVersion = "2.21.2"
 def jacksonDatabindVersion = "2.21.2"
 def protocVersion = "4.34.1"
+def openTelemetryVersion = "1.55.0"
+def openTelemetryInstrumentationVersion = "2.20.1-alpha"
 
 tasks.withType(JavaCompile) {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -41,7 +43,11 @@ dependencies {
                 "io.grpc:grpc-services:${grpcVersion}",
                 "io.grpc:grpc-census:${grpcVersion}",
                 "org.apache.logging.log4j:log4j-core:2.25.4",
-                "com.google.protobuf:protobuf-java:${protocVersion}"
+                "com.google.protobuf:protobuf-java:${protocVersion}",
+                "io.opentelemetry:opentelemetry-api:${openTelemetryVersion}",
+                "io.opentelemetry:opentelemetry-sdk:${openTelemetryVersion}",
+                "io.opentelemetry:opentelemetry-exporter-otlp:${openTelemetryVersion}",
+                "io.opentelemetry.instrumentation:opentelemetry-grpc-1.6:${openTelemetryInstrumentationVersion}"
 
         runtimeOnly "com.fasterxml.jackson.core:jackson-core:${jacksonCoreVersion}",
                 "com.fasterxml.jackson.core:jackson-databind:${jacksonDatabindVersion}",
