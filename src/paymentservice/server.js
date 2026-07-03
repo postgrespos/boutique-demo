@@ -17,6 +17,7 @@ const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 
 const charge = require('./charge');
+const metrics = require('./metrics');
 
 const logger = require('./logger')
 
@@ -40,13 +41,18 @@ class HipsterShopServer {
    */
   static ChargeServiceHandler(call, callback) {
     const amount = call.request.amount;
+    const end = metrics.rpcDuration.startTimer({ method: 'Charge' });
     try {
       logger.info(`PaymentService#Charge invoked for amount ${amount.currency_code}${amount.units}.${amount.nanos}`);
       const response = charge(call.request);
       logger.info(`PaymentService#Charge succeeded (transaction_id: ${response.transaction_id})`);
+      end();
+      metrics.rpcRequestsTotal.inc({ method: 'Charge', status: 'success' });
       callback(null, response);
     } catch (err) {
       logger.warn(`PaymentService#Charge failed: ${err.message}`);
+      end();
+      metrics.rpcRequestsTotal.inc({ method: 'Charge', status: 'error' });
       callback(err);
     }
   }
@@ -57,8 +63,9 @@ class HipsterShopServer {
 
 
   listen() {
-    const server = this.server 
+    const server = this.server
     const port = this.port
+    metrics.startMetricsServer(logger);
     server.bindAsync(
       `[::]:${port}`,
       grpc.ServerCredentials.createInsecure(),

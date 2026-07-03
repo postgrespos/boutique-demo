@@ -15,14 +15,30 @@
 # limitations under the License.
 
 import os
+import time
 
 from google.cloud import secretmanager_v1
 from urllib.parse import unquote
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from flask import Flask, request
+from flask import Flask, request, Response
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from langchain_google_alloydb_pg import AlloyDBEngine, AlloyDBVectorStore
+
+chat_requests_total = Counter(
+    'shoppingassistantservice_chat_requests_total',
+    'Total number of chat requests processed, by status.',
+    ['status'])
+
+chat_request_duration_seconds = Histogram(
+    'shoppingassistantservice_chat_request_duration_seconds',
+    'Latency of chat requests in seconds.')
+
+vector_search_results = Histogram(
+    'shoppingassistantservice_vector_search_results',
+    'Number of documents returned per similarity search.',
+    buckets=(0, 1, 2, 3, 5, 8, 13))
 
 PROJECT_ID = os.environ["PROJECT_ID"]
 REGION = os.environ["REGION"]
@@ -62,55 +78,68 @@ vectorstore = AlloyDBVectorStore.create_sync(
 def create_app():
     app = Flask(__name__)
 
+    @app.route("/metrics")
+    def metrics():
+        return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
     @app.route("/", methods=['POST'])
     def talkToGemini():
-        print("Beginning RAG call")
-        prompt = request.json['message']
-        prompt = unquote(prompt)
+        start = time.time()
+        try:
+            print("Beginning RAG call")
+            prompt = request.json['message']
+            prompt = unquote(prompt)
 
-        # Step 1 – Get a room description from Gemini-vision-pro
-        llm_vision = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
-        message = HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": "You are a professional interior designer, give me a detailed decsription of the style of the room in this image",
-                },
-                {"type": "image_url", "image_url": request.json['image']},
-            ]
-        )
-        response = llm_vision.invoke([message])
-        print("Description step:")
-        print(response)
-        description_response = response.content
+            # Step 1 – Get a room description from Gemini-vision-pro
+            llm_vision = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+            message = HumanMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": "You are a professional interior designer, give me a detailed decsription of the style of the room in this image",
+                    },
+                    {"type": "image_url", "image_url": request.json['image']},
+                ]
+            )
+            response = llm_vision.invoke([message])
+            print("Description step:")
+            print(response)
+            description_response = response.content
 
-        # Step 2 – Similarity search with the description & user prompt
-        vector_search_prompt = f""" This is the user's request: {prompt} Find the most relevant items for that prompt, while matching style of the room described here: {description_response} """
-        print(vector_search_prompt)
+            # Step 2 – Similarity search with the description & user prompt
+            vector_search_prompt = f""" This is the user's request: {prompt} Find the most relevant items for that prompt, while matching style of the room described here: {description_response} """
+            print(vector_search_prompt)
 
-        docs = vectorstore.similarity_search(vector_search_prompt)
-        print(f"Vector search: {description_response}")
-        print(f"Retrieved documents: {len(docs)}")
-        #Prepare relevant documents for inclusion in final prompt
-        relevant_docs = ""
-        for doc in docs:
-            doc_details = doc.to_json()
-            print(f"Adding relevant document to prompt context: {doc_details}")
-            relevant_docs += str(doc_details) + ", "
+            docs = vectorstore.similarity_search(vector_search_prompt)
+            print(f"Vector search: {description_response}")
+            print(f"Retrieved documents: {len(docs)}")
+            vector_search_results.observe(len(docs))
+            #Prepare relevant documents for inclusion in final prompt
+            relevant_docs = ""
+            for doc in docs:
+                doc_details = doc.to_json()
+                print(f"Adding relevant document to prompt context: {doc_details}")
+                relevant_docs += str(doc_details) + ", "
 
-        # Step 3 – Tie it all together by augmenting our call to Gemini-pro
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
-        design_prompt = (
-            f" You are an interior designer that works for Online Boutique. You are tasked with providing recommendations to a customer on what they should add to a given room from our catalog. This is the description of the room: \n"
-            f"{description_response} Here are a list of products that are relevant to it: {relevant_docs} Specifically, this is what the customer has asked for, see if you can accommodate it: {prompt} Start by repeating a brief description of the room's design to the customer, then provide your recommendations. Do your best to pick the most relevant item out of the list of products provided, but if none of them seem relevant, then say that instead of inventing a new product. At the end of the response, add a list of the IDs of the relevant products in the following format for the top 3 results: [<first product ID>], [<second product ID>], [<third product ID>] ")
-        print("Final design prompt: ")
-        print(design_prompt)
-        design_response = llm.invoke(
-            design_prompt
-        )
+            # Step 3 – Tie it all together by augmenting our call to Gemini-pro
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+            design_prompt = (
+                f" You are an interior designer that works for Online Boutique. You are tasked with providing recommendations to a customer on what they should add to a given room from our catalog. This is the description of the room: \n"
+                f"{description_response} Here are a list of products that are relevant to it: {relevant_docs} Specifically, this is what the customer has asked for, see if you can accommodate it: {prompt} Start by repeating a brief description of the room's design to the customer, then provide your recommendations. Do your best to pick the most relevant item out of the list of products provided, but if none of them seem relevant, then say that instead of inventing a new product. At the end of the response, add a list of the IDs of the relevant products in the following format for the top 3 results: [<first product ID>], [<second product ID>], [<third product ID>] ")
+            print("Final design prompt: ")
+            print(design_prompt)
+            design_response = llm.invoke(
+                design_prompt
+            )
 
-        data = {'content': design_response.content}
-        return data
+            data = {'content': design_response.content}
+            chat_requests_total.labels(status='success').inc()
+            return data
+        except Exception:
+            chat_requests_total.labels(status='error').inc()
+            raise
+        finally:
+            chat_request_duration_seconds.observe(time.time() - start)
 
     return app
 

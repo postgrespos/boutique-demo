@@ -42,6 +42,8 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from logger import getJSONLogger
 logger = getJSONLogger('emailservice-server')
 
+import metrics
+
 # Loads confirmation email template from file
 env = Environment(
     loader=FileSystemLoader('templates'),
@@ -106,10 +108,12 @@ class EmailService(BaseEmailService):
     return demo_pb2.Empty()
 
 class DummyEmailService(BaseEmailService):
+  @metrics.instrument('SendOrderConfirmation')
   def SendOrderConfirmation(self, request, context):
     logger.info('A request to send order confirmation email to {} has been received.'.format(request.email))
     logger.info('order confirmation email sent to {} for order_id={} (dummy mode, not actually sent)'.format(
       request.email, request.order.order_id))
+    metrics.emails_sent_total.inc()
     return demo_pb2.Empty()
 
 class HealthCheck():
@@ -167,6 +171,8 @@ def initStackdriverProfiling():
 
 if __name__ == '__main__':
   logger.info('starting the email service in dummy mode.')
+
+  metrics.start_metrics_server(logger)
 
   # Profiler
   try:

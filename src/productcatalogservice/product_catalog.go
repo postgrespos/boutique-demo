@@ -58,6 +58,7 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 	}
 
 	log.Warnf("[GetProduct] id=%q not found", req.Id)
+	productNotFoundTotal.Inc()
 	return nil, status.Errorf(codes.NotFound, "no product with ID %s", req.Id)
 }
 
@@ -73,6 +74,7 @@ func (p *productCatalog) SearchProducts(ctx context.Context, req *pb.SearchProdu
 	}
 
 	log.Infof("[SearchProducts] query=%q matched=%d", req.Query, len(ps))
+	searchResultsCount.Observe(float64(len(ps)))
 	return &pb.SearchProductsResponse{Results: ps}, nil
 }
 

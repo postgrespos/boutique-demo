@@ -15,6 +15,7 @@
 const cardValidator = require('simple-card-validator');
 const { v4: uuidv4 } = require('uuid');
 const pino = require('pino');
+const metrics = require('./metrics');
 
 const logger = pino({
   name: 'paymentservice-charge',
@@ -67,20 +68,32 @@ module.exports = function charge (request) {
     valid
   } = cardInfo.getCardDetails();
 
-  if (!valid) { throw new InvalidCreditCard(); }
+  if (!valid) {
+    metrics.chargeErrorsTotal.inc({ error_type: 'invalid_card' });
+    throw new InvalidCreditCard();
+  }
 
   // Only VISA and mastercard is accepted, other card types (AMEX, dinersclub) will
   // throw UnacceptedCreditCard error.
-  if (!(cardType === 'visa' || cardType === 'mastercard')) { throw new UnacceptedCreditCard(cardType); }
+  if (!(cardType === 'visa' || cardType === 'mastercard')) {
+    metrics.chargeErrorsTotal.inc({ error_type: 'unaccepted_card' });
+    throw new UnacceptedCreditCard(cardType);
+  }
 
   // Also validate expiration is > today.
   const currentMonth = new Date().getMonth() + 1;
   const currentYear = new Date().getFullYear();
   const { credit_card_expiration_year: year, credit_card_expiration_month: month } = creditCard;
-  if ((currentYear * 12 + currentMonth) > (year * 12 + month)) { throw new ExpiredCreditCard(cardNumber.replace('-', ''), month, year); }
+  if ((currentYear * 12 + currentMonth) > (year * 12 + month)) {
+    metrics.chargeErrorsTotal.inc({ error_type: 'expired_card' });
+    throw new ExpiredCreditCard(cardNumber.replace('-', ''), month, year);
+  }
 
   logger.info(`Transaction processed: ${cardType} ending ${cardNumber.substr(-4)} \
     Amount: ${amount.currency_code}${amount.units}.${amount.nanos}`);
+
+  metrics.chargesTotal.inc({ card_type: cardType });
+  metrics.chargeAmountUSD.observe(amount.units + amount.nanos / 1e9);
 
   return { transaction_id: uuidv4() };
 };

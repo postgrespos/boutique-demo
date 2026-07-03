@@ -15,14 +15,44 @@
 # limitations under the License.
 
 import logging
+import os
 import random
-from locust import FastHttpUser, TaskSet, between
+from locust import FastHttpUser, TaskSet, between, events
+from prometheus_client import Counter, Histogram, start_http_server
 from faker import Faker
 import datetime
 fake = Faker()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("loadgenerator")
+
+requests_total = Counter(
+    'loadgenerator_requests_total',
+    'Total number of requests issued by simulated users, by request name and outcome.',
+    ['name', 'outcome'])
+
+request_duration_seconds = Histogram(
+    'loadgenerator_request_duration_seconds',
+    'Latency of requests issued by simulated users, in seconds, by request name.',
+    ['name'])
+
+users_total = Counter(
+    'loadgenerator_users_started_total',
+    'Total number of simulated users started.')
+
+
+@events.init.add_listener
+def on_locust_init(environment, **kwargs):
+    port = int(os.environ.get('METRICS_PORT', '9090'))
+    start_http_server(port)
+    logger.info("serving Prometheus metrics on :%d/metrics", port)
+
+
+@events.request.add_listener
+def on_request(request_type, name, response_time, response_length, exception, **kwargs):
+    outcome = 'error' if exception else 'success'
+    requests_total.labels(name=name, outcome=outcome).inc()
+    request_duration_seconds.labels(name=name).observe(response_time / 1000.0)
 
 products = [
     '0PUK6V6EV0',
@@ -86,6 +116,7 @@ def logout(l):
 class UserBehavior(TaskSet):
 
     def on_start(self):
+        users_total.inc()
         index(self)
 
     tasks = {index: 1,

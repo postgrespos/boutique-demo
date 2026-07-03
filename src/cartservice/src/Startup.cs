@@ -12,6 +12,7 @@ using cartservice.services;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Prometheus;
 
 namespace cartservice
 {
@@ -84,11 +85,13 @@ namespace cartservice
             }
 
             app.UseRouting();
+            app.UseHttpMetrics();
 
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGrpcService<CartService>();
                 endpoints.MapGrpcService<cartservice.services.HealthCheckService>();
+                endpoints.MapMetrics();
 
                 endpoints.MapGet("/", async context =>
                 {

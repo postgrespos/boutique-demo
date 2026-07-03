@@ -40,6 +40,8 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from logger import getJSONLogger
 logger = getJSONLogger('recommendationservice-server')
 
+import metrics
+
 def initStackdriverProfiling():
   project_id = None
   try:
@@ -67,6 +69,7 @@ def initStackdriverProfiling():
   return
 
 class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
+    @metrics.instrument('ListRecommendations')
     def ListRecommendations(self, request, context):
         max_responses = 5
         # fetch list of products from product catalog stub
@@ -80,6 +83,7 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
         # fetch product ids from indices
         prod_list = [filtered_products[i] for i in indices]
         logger.info("[ListRecommendations] excluded={} recommended={}".format(request.product_ids, prod_list))
+        metrics.recommendations_returned.observe(len(prod_list))
         # build and return response
         response = demo_pb2.ListRecommendationsResponse()
         response.product_ids.extend(prod_list)
@@ -96,6 +100,8 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
 
 if __name__ == "__main__":
     logger.info("initializing recommendationservice")
+
+    metrics.start_metrics_server(logger)
 
     try:
       if "DISABLE_PROFILER" in os.environ:

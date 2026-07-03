@@ -82,6 +82,8 @@ func main() {
 		log.Info("Profiling disabled.")
 	}
 
+	startMetricsServer()
+
 	flag.Parse()
 
 	// set injected latency
@@ -132,7 +134,8 @@ func run(port string) string {
 			propagation.TraceContext{}, propagation.Baggage{}))
 	var srv *grpc.Server
 	srv = grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()))
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(metricsUnaryInterceptor))
 
 	svc := &productCatalog{}
 	err = loadCatalog(&svc.catalog)

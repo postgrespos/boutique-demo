@@ -106,6 +106,7 @@ public final class AdService {
     @Override
     public void getAds(AdRequest req, StreamObserver<AdResponse> responseObserver) {
       AdService service = AdService.getInstance();
+      long startNanos = System.nanoTime();
       try {
         List<Ad> allAds = new ArrayList<>();
         logger.info("received ad request (context_words=" + req.getContextKeysList() + ")");
@@ -120,14 +121,22 @@ public final class AdService {
         if (allAds.isEmpty()) {
           // Serve random ads.
           allAds = service.getRandomAds();
+          AdServiceMetrics.ADS_FALLBACK_TOTAL.inc();
         }
         logger.info("serving " + allAds.size() + " ad(s)");
+        AdServiceMetrics.ADS_SERVED.observe(allAds.size());
         AdResponse reply = AdResponse.newBuilder().addAllAds(allAds).build();
         responseObserver.onNext(reply);
         responseObserver.onCompleted();
+        AdServiceMetrics.GRPC_REQUESTS_TOTAL.labelValues("GetAds", "success").inc();
       } catch (StatusRuntimeException e) {
         logger.log(Level.WARN, "GetAds Failed with status {}", e.getStatus());
+        AdServiceMetrics.GRPC_REQUESTS_TOTAL.labelValues("GetAds", "error").inc();
         responseObserver.onError(e);
+      } finally {
+        AdServiceMetrics.GRPC_REQUEST_DURATION_SECONDS
+            .labelValues("GetAds")
+            .observe((System.nanoTime() - startNanos) / 1e9);
       }
     }
   }
@@ -259,6 +268,8 @@ public final class AdService {
     // Tracing must be initialized before the server is built, since the tracing
     // interceptor (if any) needs to be attached at build time.
     initTracing();
+
+    AdServiceMetrics.start();
 
     new Thread(() -> initStats()).start();
 

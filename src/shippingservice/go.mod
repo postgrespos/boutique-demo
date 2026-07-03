@@ -6,6 +6,7 @@ toolchain go1.26.1
 
 require (
 	cloud.google.com/go/profiler v0.4.3
+	github.com/prometheus/client_golang v1.20.5
 	github.com/sirupsen/logrus v1.9.4
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0
 	go.opentelemetry.io/otel v1.43.0

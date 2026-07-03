@@ -77,6 +77,8 @@ const path = require('path');
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 
+const metrics = require('./metrics');
+
 const MAIN_PROTO_PATH = path.join(__dirname, './proto/demo.proto');
 const HEALTH_PROTO_PATH = path.join(__dirname, './proto/grpc/health/v1/health.proto');
 
@@ -160,6 +162,7 @@ function convert (call, callback) {
       result.currency_code = request.to_code;
 
       logger.info(`converted ${from.units}.${from.nanos} ${from.currency_code} -> ${result.units}.${result.nanos} ${result.currency_code}`);
+      metrics.conversionsTotal.inc({ from_currency: from.currency_code, to_currency: result.currency_code });
       callback(null, result);
     });
   } catch (err) {
@@ -181,8 +184,12 @@ function check (call, callback) {
  */
 function main () {
   logger.info(`Starting gRPC server on port ${PORT}...`);
+  metrics.startMetricsServer(logger);
   const server = new grpc.Server();
-  server.addService(shopProto.CurrencyService.service, {getSupportedCurrencies, convert});
+  server.addService(shopProto.CurrencyService.service, {
+    getSupportedCurrencies: metrics.instrument('GetSupportedCurrencies', getSupportedCurrencies),
+    convert: metrics.instrument('Convert', convert)
+  });
   server.addService(healthProto.Health.service, {check});
 
   server.bindAsync(

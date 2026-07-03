@@ -233,6 +233,7 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	log.WithField("product", payload.ProductID).WithField("quantity", payload.Quantity).Info("added to cart")
+	cartItemsAdded.Add(float64(payload.Quantity))
 	w.Header().Set("location", baseUrl + "/cart")
 	w.WriteHeader(http.StatusFound)
 }
@@ -386,6 +387,8 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 		WithField("items", len(order.GetOrder().GetItems())).
 		WithField("total_paid", fmt.Sprintf("%s%d.%02d", totalPaid.GetCurrencyCode(), totalPaid.GetUnits(), totalPaid.GetNanos()/10000000)).
 		Info("order placed")
+	ordersPlaced.Inc()
+	orderValueUSD.Observe(float64(totalPaid.GetUnits()) + float64(totalPaid.GetNanos())/1e9)
 
 	currencies, err := fe.getCurrencies(r.Context())
 	if err != nil {

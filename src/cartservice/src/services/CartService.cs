@@ -33,22 +33,50 @@ namespace cartservice.services
 
         public async override Task<Empty> AddItem(AddItemRequest request, ServerCallContext context)
         {
-            await _cartStore.AddItemAsync(request.UserId, request.Item.ProductId, request.Item.Quantity);
+            try
+            {
+                await _cartStore.AddItemAsync(request.UserId, request.Item.ProductId, request.Item.Quantity);
+            }
+            catch
+            {
+                CartServiceMetrics.CartStoreErrorsTotal.WithLabels("AddItem").Inc();
+                throw;
+            }
             Console.WriteLine($"Added product {request.Item.ProductId} (qty {request.Item.Quantity}) to cart for user {request.UserId}");
+            CartServiceMetrics.ItemsAddedTotal.Inc(request.Item.Quantity);
             return Empty;
         }
 
         public override async Task<Cart> GetCart(GetCartRequest request, ServerCallContext context)
         {
-            var cart = await _cartStore.GetCartAsync(request.UserId);
+            Cart cart;
+            try
+            {
+                cart = await _cartStore.GetCartAsync(request.UserId);
+            }
+            catch
+            {
+                CartServiceMetrics.CartStoreErrorsTotal.WithLabels("GetCart").Inc();
+                throw;
+            }
             Console.WriteLine($"Returned cart for user {request.UserId} with {cart.Items.Count} item(s)");
+            CartServiceMetrics.CartSizeOnRead.Observe(cart.Items.Count);
             return cart;
         }
 
         public async override Task<Empty> EmptyCart(EmptyCartRequest request, ServerCallContext context)
         {
-            await _cartStore.EmptyCartAsync(request.UserId);
+            try
+            {
+                await _cartStore.EmptyCartAsync(request.UserId);
+            }
+            catch
+            {
+                CartServiceMetrics.CartStoreErrorsTotal.WithLabels("EmptyCart").Inc();
+                throw;
+            }
             Console.WriteLine($"Emptied cart for user {request.UserId}");
+            CartServiceMetrics.CartsEmptiedTotal.Inc();
             return Empty;
         }
     }

@@ -75,6 +75,8 @@ func main() {
 		log.Info("Profiling disabled.")
 	}
 
+	startMetricsServer()
+
 	port := defaultPort
 	if value, ok := os.LookupEnv("PORT"); ok {
 		port = value
@@ -94,10 +96,14 @@ func main() {
 	var srv *grpc.Server
 	if os.Getenv("DISABLE_STATS") == "" {
 		log.Info("Stats enabled, but temporarily unavailable")
-		srv = grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
+		srv = grpc.NewServer(
+			grpc.StatsHandler(otelgrpc.NewServerHandler()),
+			grpc.ChainUnaryInterceptor(metricsUnaryInterceptor))
 	} else {
 		log.Info("Stats disabled.")
-		srv = grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
+		srv = grpc.NewServer(
+			grpc.StatsHandler(otelgrpc.NewServerHandler()),
+			grpc.ChainUnaryInterceptor(metricsUnaryInterceptor))
 	}
 	svc := &server{}
 	pb.RegisterShippingServiceServer(srv, svc)
@@ -137,6 +143,7 @@ func (s *server) GetQuote(ctx context.Context, in *pb.GetQuoteRequest) (*pb.GetQ
 	}
 	quote := CreateQuoteFromCount(count)
 	log.Infof("[GetQuote] quoted $%d.%02d for %d unit(s)", quote.Dollars, quote.Cents, count)
+	quotedCostUSD.Observe(float64(quote.Dollars) + float64(quote.Cents)/100)
 
 	// 2. Generate a response.
 	return &pb.GetQuoteResponse{
@@ -156,6 +163,7 @@ func (s *server) ShipOrder(ctx context.Context, in *pb.ShipOrderRequest) (*pb.Sh
 	baseAddress := fmt.Sprintf("%s, %s, %s", in.Address.StreetAddress, in.Address.City, in.Address.State)
 	id := CreateTrackingId(baseAddress)
 	log.Infof("[ShipOrder] created tracking_id=%s", id)
+	shipmentsTotal.Inc()
 
 	// 2. Generate a response.
 	return &pb.ShipOrderResponse{
