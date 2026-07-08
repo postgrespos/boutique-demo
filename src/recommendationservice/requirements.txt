@@ -59,6 +59,8 @@ opentelemetry-semantic-conventions==0.60b1
     #   opentelemetry-sdk
 packaging==25.0
     # via opentelemetry-instrumentation
+prometheus-client==0.21.1
+    # via -r requirements.in
 proto-plus==1.27.0
     # via google-api-core
 protobuf==6.33.5

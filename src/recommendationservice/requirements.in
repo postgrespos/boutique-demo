@@ -6,4 +6,3 @@ rsa==4.9.1
 opentelemetry-distro==0.60b1
 opentelemetry-instrumentation-grpc==0.60b1
 opentelemetry-exporter-otlp-proto-grpc==1.39.1
-prometheus-client==0.21.1
